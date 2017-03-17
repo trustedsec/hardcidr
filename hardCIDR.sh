@@ -38,6 +38,9 @@ cat << "banner"
   █▀                                                                                  ▀█
 
   A tool for locating target Organization CIDRs
+  Written by: Jason Ashton, TrustedSec
+  Website: https://www.trustedsec.com
+  Twitter: @NineWires
 
 banner
 
