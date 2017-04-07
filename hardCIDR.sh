@@ -206,9 +206,6 @@ fi
 
 ###################################################################################################################
 
-# Catch termination
-trap f_term SIGHUP SIGINT SIGTERM
-
 f_term()
 {
 echo
@@ -318,6 +315,9 @@ else
      cd $outdir
      arindir=$outdir
 fi
+
+# Catch termination
+trap f_term SIGHUP SIGINT SIGTERM
 
 # Create country codes file
 countrycodes="AX,AF,AL,DZ,AS,AD,AO,AI,AQ,AG,AR,AM,AW,AU,AT,AZ,BS,BH,BD,BB,BY,BE,BZ,BJ,BM,BT,BO,BQ,BA,BW,BV,BR,IO,\
