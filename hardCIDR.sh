@@ -40,7 +40,7 @@ cat << "banner"
   A tool for locating target Organization CIDRs
   Written by: Jason Ashton, TrustedSec
   Website: https://www.trustedsec.com
-  Twitter: @NineWires
+  Twitter: @ninewires
 
 banner
 
@@ -251,6 +251,19 @@ while [[ $orginput == "" ]]; do
      read -e orginput
 done
 
+# Check for names containing '&' or 'and' to search for both instances
+if [[ $orginput == *'&'* ]]; then
+     echo -e "${WHT}Client name contains an ${RED}&${WHT}. We will search for name with ${RED}and ${WHT}also.${NC} "
+     echo $orginput > tmporglist
+     echo $orginput | sed 's|\&|and|' >> tmporglist
+elif [[ $orginput == *'and'* ]]; then
+     echo -e "${WHT}Client name contains ${RED}and${WHT}. We will search for name with an ${RED}& ${WHT}also.${NC}"
+     echo $orginput > tmporglist
+     echo $orginput | sed 's|and|\&|' >> tmporglist
+else
+     echo $orginput > tmporglist
+fi
+
 # Get client email domain
 echo
 echo -e -n "Enter Client Email Domain: "
@@ -312,6 +325,7 @@ if [ -d $outdir ]; then
      fi
 else
      mkdir $outdir
+     mv tmporglist $outdir
      cd $outdir
      arindir=$outdir
 fi
@@ -320,13 +334,13 @@ fi
 trap f_term SIGHUP SIGINT SIGTERM
 
 # Create country codes file
-countrycodes="AX,AF,AL,DZ,AS,AD,AO,AI,AQ,AG,AR,AM,AW,AU,AT,AZ,BS,BH,BD,BB,BY,BE,BZ,BJ,BM,BT,BO,BQ,BA,BW,BV,BR,IO,\
+countrycodes="11,AX,AF,AL,DZ,AS,AD,AO,AI,AQ,AG,AR,AM,AW,AU,AT,AZ,BS,BH,BD,BB,BY,BE,BZ,BJ,BM,BT,BO,BQ,BA,BW,BV,BR,IO,\
 BN,BG,BF,BI,KH,CM,CA,CV,KY,CF,TD,CL,CN,CX,CC,CO,KM,CG,CD,CK,CR,CI,HR,CU,CW,CY,CZ,DK,DJ,DM,DO,EC,EG,SV,GQ,ER,EE,ET,\
 FK,FO,FJ,FI,FR,GF,PF,TF,GA,GM,GE,DE,GH,GI,GR,GL,GD,GP,GU,GT,GG,GN,GW,GY,HT,HM,VA,HN,HK,HU,IS,IN,ID,IR,IQ,IE,IM,IL,\
 IT,JM,JP,JE,JO,KZ,KE,KI,KP,KR,KW,KG,LA,LV,LB,LS,LR,LY,LI,LT,LU,MO,MK,MG,MW,MY,MV,ML,MT,MH,MQ,MR,MU,YT,MX,FM,MD,MC,\
 MN,ME,MS,MA,MZ,MM,NA,NR,NP,NL,NC,NZ,NI,NE,NG,NU,NF,MP,NO,OM,PK,PW,PS,PA,PG,PY,PE,PH,PN,PL,PT,PR,QA,RE,RO,RU,RW,SH,\
 BL,KN,LC,MF,PM,VC,WS,SM,ST,SA,SN,RS,SC,SL,SG,SX,SK,SI,SB,SO,ZA,GS,SS,ES,LK,SD,SR,SJ,SZ,SE,CH,SY,TW,TJ,TZ,TH,TL,TG,\
-TK,TO,TT,TN,TR,TM,TC,TV,UG,UA,AE,GB,UM,UY,UZ,VU,VE,VN,VG,VI,WF,EH,YE,ZM,ZW"
+TK,TO,TT,TN,TR,TM,TC,TV,UG,UA,US,AE,GB,UM,UY,UZ,VU,VE,VN,VG,VI,WF,EH,YE,ZM,ZW"
 
 echo "$countrycodes" | tr ',' '\n' > $ccfilename
 
@@ -363,35 +377,37 @@ fi
 
 f_ripe()
 {
-echo
-echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$orginput ${WHT}Org Names via${NC} RIPE NCC"
+while read name; do
+     echo
+     echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}Org Names via${NC} RIPE NCC"
 
-whois -h whois.ripe.net "$orginput" > tmporgname 2>&1
-if ! grep -q -E 'No entries found|Network is unreachable|No route to host' tmporgname; then
-     echo -e "\t${GRN}[-] ${WHT}Found RIPE NCC Records for ${GRN}$orginput${NC}"
-     grep 'inetnum' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpinetnum
-     rir="RIPE NCC"
-     while read range; do
-          whois -h whois.ripe.net "$range" | sed 's|  *||g' | sed 's|,||g' > tmprange
-          inetnum=$(grep 'inetnum' tmprange | cut -d':' -f2)
-          inetnumhtml=$(echo $range | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
-          inetnumurl="https://apps.db.ripe.net/search/lookup.html?source=ripe&key=${inetnumhtml}&type=inetnum"
-          org=$(grep -m1 'descr' tmprange | cut -d':' -f2)
-          netname=$(grep 'netname' tmprange | cut -d':' -f2)
-          country=$(grep 'country' tmprange | cut -d':' -f2 | tr '[:lower:]' '[:upper:]')
-          cidrwc=$($ipcalccmd $range | grep -v 'deaggregate' | wc -l)
-          if [ $cidrwc -gt 1 ]; then
-               cidr='**Non-standard range**'
-          else
-               cidr=$($ipcalccmd $range | grep -v 'deaggregate')
-          fi
-          echo "$netname,$org,$inetnum,$inetnumurl,$country,$rir,$cidr" >> $orgoutfile
-     done < tmpinetnum
-elif grep -q -E 'Network is unreachable|No route to host' tmporgname; then
-     echo -e "\t${RED}[-] ${WHT}whois.ripe.net is unreachable. Check network connection & try again.${NC}"
-else
-     echo -e "\t${RED}[-] ${WHT}No RIPE NCC records found for ${RED}$orginput${NC}"
-fi
+     whois -h whois.ripe.net "$name" > tmporgname 2>&1
+     if ! grep -q -E 'No entries found|Network is unreachable|No route to host' tmporgname; then
+          echo -e "\t${GRN}[-] ${WHT}Found RIPE NCC Records for ${GRN}$name${NC}"
+          grep 'inetnum' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpinetnum
+          rir="RIPE NCC"
+          while read range; do
+               whois -h whois.ripe.net "$range" | sed 's|  *||g' | sed 's|,||g' > tmprange
+               inetnum=$(grep 'inetnum' tmprange | cut -d':' -f2)
+               inetnumhtml=$(echo $range | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
+               inetnumurl="https://apps.db.ripe.net/search/lookup.html?source=ripe&key=${inetnumhtml}&type=inetnum"
+               org=$(grep -m1 'descr' tmprange | cut -d':' -f2)
+               netname=$(grep 'netname' tmprange | cut -d':' -f2)
+               country=$(grep 'country' tmprange | cut -d':' -f2 | tr '[:lower:]' '[:upper:]')
+               cidrwc=$($ipcalccmd $range | grep -v 'deaggregate' | wc -l)
+               if [ $cidrwc -gt 1 ]; then
+                    cidr='**Non-standard range**'
+               else
+                    cidr=$($ipcalccmd $range | grep -v 'deaggregate')
+               fi
+               echo "$netname,$org,$inetnum,$inetnumurl,$country,$rir,$cidr" >> $orgoutfile
+          done < tmpinetnum
+     elif grep -q -E 'Network is unreachable|No route to host' tmporgname; then
+          echo -e "\t${RED}[-] ${WHT}whois.ripe.net is unreachable. Check network connection & try again.${NC}"
+     else
+          echo -e "\t${RED}[-] ${WHT}No RIPE NCC records found for ${RED}$name${NC}"
+     fi
+done < tmporglist
 
 rm tmporgname tmpinetnum tmprange 2>/dev/null
 }
@@ -403,54 +419,56 @@ rm tmporgname tmpinetnum tmprange 2>/dev/null
 
 f_apnic()
 {
-echo
-echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$orginput ${WHT}Org Names via${NC} APNIC"
+while read name; do
+     echo
+     echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}Org Names via${NC} APNIC"
 
-whois -h whois.apnic.net "$orginput" > tmporgname 2>&1
-if ! grep -q -E 'No entries found|Network is unreachable|No route to host' tmporgname; then
-     echo -e "\t${GRN}[-] ${WHT}Found APNIC Records for ${GRN}$orginput${NC}"
-     grep 'inetnum' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpinetnum
-     # get notify email address from inetnums
-     grep 'notify' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpemails
+     whois -h whois.apnic.net "$name" > tmporgname 2>&1
+     if ! grep -q -E 'No entries found|Network is unreachable|No route to host' tmporgname; then
+          echo -e "\t${GRN}[-] ${WHT}Found APNIC Records for ${GRN}$name${NC}"
+          grep 'inetnum' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpinetnum
+          # get notify email address from inetnums
+          grep 'notify' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpemails
 
-     # inverse lookup for notify email address & get associated orgnames/inetnums
-     if [ -s tmpemails ]; then
-          while read email; do
-               whois -h whois.apnic.net -i ny "$email" > tmplookup
-               grep -B1 -i "$orginput" tmplookup | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un >> tmpinetnum
-          done < tmpemails
-          grep -B1 -i "$orginput" tmplookup | grep 'netname' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpnetname
-          while read netname; do
-               whois -h whois.apnic.net $netname | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 >> tmpinetnum
-          done < tmpnetname
+          # inverse lookup for notify email address & get associated orgnames/inetnums
+          if [ -s tmpemails ]; then
+               while read email; do
+                    whois -h whois.apnic.net -i ny "$email" > tmplookup
+                    grep -B1 -i "$name" tmplookup | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un >> tmpinetnum
+               done < tmpemails
+               grep -B1 -i "$name" tmplookup | grep 'netname' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpnetname
+               while read netname; do
+                    whois -h whois.apnic.net $netname | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 >> tmpinetnum
+               done < tmpnetname
+          fi
+
+          # query by inetnum
+          if [ -s tmpinetnum ]; then
+               rir="APNIC"
+               while read range; do
+                    whois -h whois.apnic.net "$range" | sed 's|  *||g' | sed 's|,||g' > tmprange
+                    inetnum=$(grep 'inetnum' tmprange | cut -d':' -f2)
+                    inetnumhtml=$(echo $range | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
+                    inetnumurl="http://wq.apnic.net/apnic-bin/whois.pl?searchtext=${inetnumhtml}"
+                    org=$(grep -m1 'descr' tmprange | cut -d':' -f2)
+                    netname=$(grep 'netname' tmprange | cut -d':' -f2)
+                    country=$(grep -m1 'country' tmprange | cut -d':' -f2 | tr '[:lower:]' '[:upper:]')
+                    admin=$(grep -m1 'admin-c' tmprange | cut -d':' -f2)
+                    cidrwc=$($ipcalccmd $range | grep -v 'deaggregate' | wc -l)
+                    if [ $cidrwc -gt 1 ]; then
+                         cidr='**Non-standard range**'
+                    else
+                         cidr=$($ipcalccmd $range | grep -v 'deaggregate')
+                    fi
+                    echo "$netname,$org,$inetnum,$inetnumurl,$country,$rir,$cidr" >> $orgoutfile
+               done < tmpinetnum
+          fi
+     elif grep -q -E 'Network is unreachable|No route to host' tmporgname; then
+          echo -e "\t${RED}[-] ${WHT}whois.apnic.net is unreachable. Check network connection & try again.${NC}"
+     else
+          echo -e "\t${RED}[-] ${WHT}No APNIC Records found for ${RED}$name${NC}"
      fi
-
-     # query by inetnum
-     if [ -s tmpinetnum ]; then
-          rir="APNIC"
-          while read range; do
-               whois -h whois.apnic.net "$range" | sed 's|  *||g' | sed 's|,||g' > tmprange
-               inetnum=$(grep 'inetnum' tmprange | cut -d':' -f2)
-               inetnumhtml=$(echo $range | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
-               inetnumurl="http://wq.apnic.net/apnic-bin/whois.pl?searchtext=${inetnumhtml}"
-               org=$(grep -m1 'descr' tmprange | cut -d':' -f2)
-               netname=$(grep 'netname' tmprange | cut -d':' -f2)
-               country=$(grep -m1 'country' tmprange | cut -d':' -f2 | tr '[:lower:]' '[:upper:]')
-               admin=$(grep -m1 'admin-c' tmprange | cut -d':' -f2)
-               cidrwc=$($ipcalccmd $range | grep -v 'deaggregate' | wc -l)
-               if [ $cidrwc -gt 1 ]; then
-                    cidr='**Non-standard range**'
-               else
-                    cidr=$($ipcalccmd $range | grep -v 'deaggregate')
-               fi
-               echo "$netname,$org,$inetnum,$inetnumurl,$country,$rir,$cidr" >> $orgoutfile
-          done < tmpinetnum
-     fi
-elif grep -q -E 'Network is unreachable|No route to host' tmporgname; then
-     echo -e "\t${RED}[-] ${WHT}whois.apnic.net is unreachable. Check network connection & try again.${NC}"
-else
-     echo -e "\t${RED}[-] ${WHT}No APNIC Records found for ${RED}$orginput${NC}"
-fi
+done < tmporglist
 
 rm tmporgname tmpinetnum tmpemails tmplookup tmpnetname tmprange 2>/dev/null
 }
@@ -462,81 +480,83 @@ rm tmporgname tmpinetnum tmpemails tmplookup tmpnetname tmprange 2>/dev/null
 
 f_lacnic()
 {
-echo
-echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$orginput ${WHT}Org Owner via${NC} LACNIC"
+while read name; do
+     echo
+     echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}Org Owner via${NC} LACNIC"
 
-rir="LACNIC"
+     rir="LACNIC"
 
-ARRAYRS=( $hers $gblxrs $tiscalirs $eastlinkrs )
-rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
-randomrs=$(echo $rando)
-ncrs="nc -nv $randomrs 23"
+     ARRAYRS=( $hers $gblxrs $tiscalirs $eastlinkrs )
+     rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
+     randomrs=$(echo $rando)
+     ncrs="nc -nv $randomrs 23"
 
-# query LACNIC
-grep 'owner:' $dbfilepath | grep -i "$orginput" | sort -u | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpowners
+     # query LACNIC
+     grep 'owner:' $dbfilepath | grep -i "$name" | sort -u | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpowners
 
-if [ -s tmpowners ]; then
-     echo -e "\t${GRN}[-] ${WHT}Found LACNIC Records for ${GRN}$orginput${NC}"
-     while read owner; do
-          grep -B4 "$owner" $dbfilepath | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -u >> tmpinetnum
-          grep -B4 "$owner" $dbfilepath | grep 'aut-num' | grep -v 'N/A' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -u >> tmpasn
-          sort -u tmpinetnum -o tmpinetnum
-          sort -u tmpasn -o tmpasn
-     done < tmpowners
+     if [ -s tmpowners ]; then
+          echo -e "\t${GRN}[-] ${WHT}Found LACNIC Records for ${GRN}$name${NC}"
+          while read owner; do
+               grep -B4 "$owner" $dbfilepath | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -u >> tmpinetnum
+               grep -B4 "$owner" $dbfilepath | grep 'aut-num' | grep -v 'N/A' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -u >> tmpasn
+               sort -u tmpinetnum -o tmpinetnum
+               sort -u tmpasn -o tmpasn
+          done < tmpowners
 
-     # query by inetnum
-     if [ -s tmpinetnum ]; then
-          while read inetnum; do
-               grep -B2 -A8 "$inetnum" $dbfilepath | sed 's|  *||g' > tmplookup
-               netname=$(grep 'ownerid:' tmplookup | cut -d':' -f2)
-               org=$(grep 'owner:' tmplookup | cut -d':' -f2 | sed 's|,||g')
-               country=$(grep 'country:' tmplookup | cut -d':' -f2)
-               range=$(grep 'Range=' tmplookup | cut -d'=' -f2)
-               mask=$(grep -m1 'inetnum:' tmplookup | cut -d'/' -f2)
-               cidr=$(echo "$range/$mask")
-               echo "$netname,$org,$inetnum,,$country,$rir,$cidr" >> $orgoutfile
-          done < tmpinetnum
-     fi
-
-     # query by ASN
-     if [ -s tmpasn ]; then
-          while read asn; do
-               grep -m1 -B3 -A4 "$asn" $dbfilepath | sed 's|  *||g' > tmplookup
-               netname=$(grep 'ownerid:' tmplookup | cut -d':' -f2)
-               org=$(grep 'owner:' tmplookup | cut -d':' -f2 | sed 's|,||g')
-               country=$(grep 'country:' tmplookup | cut -d':' -f2)
-               num=$(echo $asn | sed 's|AS||g')
-               (sleep 2; echo "show ip bgp regexp $num"; sleep 8; echo " "; sleep 4; echo "exit") | $ncrs > tmpprefix 2>/dev/null
-               grep -e 'i[0-9]' tmpprefix | sed 's|i||g' | cut -d' ' -f2 | grep -v '/' | sed 's|$|/24|g' > bgplookup
-               while read cidr; do
-                    neturl=$(echo "http://bgp.he.net/${asn}#_asinfo")
-                    echo "$netname,$org,$asn,$neturl,$country,$rir,$cidr" >> $orgoutfile
-               done < bgplookup
-               sleep 2
-          done < tmpasn
-     fi
-
-     # query by eamil address
-     grep -i "@${emaildomain}" $dbfilepath | sed 's|  *||g' | cut -d':' -f2 | sort -u > tmpemails
-     if [ -s tmpemails ]; then
-          while read email; do
-               grep -B25 "$email" $dbfilepath | grep 'inetnum:' | sed 's|  *||g' | cut -d':' -f2- > tmpinetnum
+          # query by inetnum
+          if [ -s tmpinetnum ]; then
                while read inetnum; do
-                    grep -B2 -A16 "$inetnum" $dbfilepath | sed 's|  *||g' > tmplookup
+                    grep -B2 -A8 "$inetnum" $dbfilepath | sed 's|  *||g' > tmplookup
                     netname=$(grep 'ownerid:' tmplookup | cut -d':' -f2)
                     org=$(grep 'owner:' tmplookup | cut -d':' -f2 | sed 's|,||g')
-                    pochandle=$(grep 'nic-hdl:' tmplookup | cut -d':' -f2)
                     country=$(grep 'country:' tmplookup | cut -d':' -f2)
                     range=$(grep 'Range=' tmplookup | cut -d'=' -f2)
                     mask=$(grep -m1 'inetnum:' tmplookup | cut -d'/' -f2)
                     cidr=$(echo "$range/$mask")
-                    echo "$org,,$pochandle,$email,,$country,$rir,$cidr" >> $pocoutfile
+                    echo "$netname,$org,$inetnum,,$country,$rir,$cidr" >> $orgoutfile
                done < tmpinetnum
-          done < tmpemails
+          fi
+
+          # query by ASN
+          if [ -s tmpasn ]; then
+               while read asn; do
+                    grep -m1 -B3 -A4 "$asn" $dbfilepath | sed 's|  *||g' > tmplookup
+                    netname=$(grep 'ownerid:' tmplookup | cut -d':' -f2)
+                    org=$(grep 'owner:' tmplookup | cut -d':' -f2 | sed 's|,||g')
+                    country=$(grep 'country:' tmplookup | cut -d':' -f2)
+                    num=$(echo $asn | sed 's|AS||g')
+                    (sleep 2; echo "show ip bgp regexp $num"; sleep 8; echo " "; sleep 4; echo "exit") | $ncrs > tmpprefix 2>/dev/null
+                    grep -e 'i[0-9]' tmpprefix | sed 's|i||g' | cut -d' ' -f2 | grep -v '/' | sed 's|$|/24|g' > bgplookup
+                    while read cidr; do
+                         neturl=$(echo "http://bgp.he.net/${asn}#_asinfo")
+                         echo "$netname,$org,$asn,$neturl,$country,$rir,$cidr" >> $orgoutfile
+                    done < bgplookup
+                    sleep 2
+               done < tmpasn
+          fi
+
+          # query by eamil address
+          grep -i "@${emaildomain}" $dbfilepath | sed 's|  *||g' | cut -d':' -f2 | sort -u > tmpemails
+          if [ -s tmpemails ]; then
+               while read email; do
+                    grep -B25 "$email" $dbfilepath | grep 'inetnum:' | sed 's|  *||g' | cut -d':' -f2- > tmpinetnum
+                    while read inetnum; do
+                         grep -B2 -A16 "$inetnum" $dbfilepath | sed 's|  *||g' > tmplookup
+                         netname=$(grep 'ownerid:' tmplookup | cut -d':' -f2)
+                         org=$(grep 'owner:' tmplookup | cut -d':' -f2 | sed 's|,||g')
+                         pochandle=$(grep 'nic-hdl:' tmplookup | cut -d':' -f2)
+                         country=$(grep 'country:' tmplookup | cut -d':' -f2)
+                         range=$(grep 'Range=' tmplookup | cut -d'=' -f2)
+                         mask=$(grep -m1 'inetnum:' tmplookup | cut -d'/' -f2)
+                         cidr=$(echo "$range/$mask")
+                         echo "$org,,$pochandle,$email,,$country,$rir,$cidr" >> $pocoutfile
+                    done < tmpinetnum
+               done < tmpemails
+          fi
+     else
+          echo -e "\t${RED}[-] ${WHT}No LACNIC Records found for ${RED}$name${NC}"
      fi
-else
-     echo -e "\t${RED}[-] ${WHT}No LACNIC Records found for ${RED}$orginput${NC}"
-fi
+done < tmporglist
 
 rm tmpowners tmpinetnum tmpasn tmplookup tmpprefix bgplookup tmpemails 2>/dev/null
 }
@@ -548,54 +568,56 @@ rm tmpowners tmpinetnum tmpasn tmplookup tmpprefix bgplookup tmpemails 2>/dev/nu
 
 f_afrinic()
 {
-echo
-echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$orginput ${WHT}Org Names via${NC} AfriNIC"
+while read name; do
+     echo
+     echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}Org Names via${NC} AfriNIC"
 
-whois -h whois.afrinic.net "$orginput" > tmporgname 2>&1
-if ! grep -q -E 'No entries found|Network is unreachable|No route to host' tmporgname; then
-     echo -e "\t${GRN}[-] ${WHT}Found AfriNIC Records for ${GRN}$orginput${NC}"
-     grep 'inetnum' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpinetnum
-     # get notify email address from inetnums
-     grep 'notify' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpemails
+     whois -h whois.afrinic.net "$name" > tmporgname 2>&1
+     if ! grep -q -E 'No entries found|Network is unreachable|No route to host' tmporgname; then
+          echo -e "\t${GRN}[-] ${WHT}Found AfriNIC Records for ${GRN}$name${NC}"
+          grep 'inetnum' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 > tmpinetnum
+          # get notify email address from inetnums
+          grep 'notify' tmporgname | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpemails
 
-     # inverse lookup for notify email address & get associated orgnames/inetnums
-     if [ -s tmpemails ]; then
-          while read email; do
-               whois -h whois.afrinic.net -i ny "$email" > tmplookup
-               grep -B1 -i "$orginput" tmplookup | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un >> tmpinetnum
-          done < tmpemails
-          grep -B1 -i "$orginput" tmplookup | grep 'netname' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpnetname
-          while read netname; do
-               whois -h whois.afrinic.net $netname | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 >> tmpinetnum
-          done < tmpnetname
+          # inverse lookup for notify email address & get associated orgnames/inetnums
+          if [ -s tmpemails ]; then
+               while read email; do
+                    whois -h whois.afrinic.net -i ny "$email" > tmplookup
+                    grep -B1 -i "$name" tmplookup | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un >> tmpinetnum
+               done < tmpemails
+               grep -B1 -i "$name" tmplookup | grep 'netname' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 | sort -un > tmpnetname
+               while read netname; do
+                    whois -h whois.afrinic.net $netname | grep 'inetnum' | sed -e "s|  *|$tab|g" | cut -d$'\t' -f2 >> tmpinetnum
+               done < tmpnetname
+          fi
+
+          # query by inetnum
+          if [ -s tmpinetnum ]; then
+               rir="AfriNIC"
+               while read range; do
+                    whois -h whois.afrinic.net "$range" | sed 's|  *||g' | sed 's|,||g' > tmprange
+                    inetnum=$(grep 'inetnum' tmprange | cut -d':' -f2)
+                    inetnumhtml=$(echo $range | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
+                    inetnumurl="http://www.afrinic.net/en/services/whois-query"
+                    org=$(grep -m1 'descr' tmprange | cut -d':' -f2)
+                    netname=$(grep 'netname' tmprange | cut -d':' -f2)
+                    country=$(grep -m1 'country' tmprange | cut -d':' -f2 | tr '[:lower:]' '[:upper:]')
+                    admin=$(grep -m1 'admin-c' tmprange | cut -d':' -f2)
+                    cidrwc=$($ipcalccmd $range | grep -v 'deaggregate' | wc -l)
+                    if [ $cidrwc -gt 1 ]; then
+                         cidr='**Non-standard range**'
+                    else
+                         cidr=$($ipcalccmd $range | grep -v 'deaggregate')
+                    fi
+                    echo "$netname,$org,$inetnum,$inetnumurl,$country,$rir,$cidr" >> $orgoutfile
+               done < tmpinetnum
+          fi
+     elif grep -q -E 'Network is unreachable|No route to host' tmporgname; then
+          echo -e "\t${RED}[-] ${WHT}whois.afrinic.net is unreachable. Check network connection & try again.${NC}"
+     else
+          echo -e "\t${RED}[-] ${WHT}No AfriNIC Records found for ${RED}$name${NC}"
      fi
-
-     # query by inetnum
-     if [ -s tmpinetnum ]; then
-          rir="AfriNIC"
-          while read range; do
-               whois -h whois.afrinic.net "$range" | sed 's|  *||g' | sed 's|,||g' > tmprange
-               inetnum=$(grep 'inetnum' tmprange | cut -d':' -f2)
-               inetnumhtml=$(echo $range | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
-               inetnumurl="http://www.afrinic.net/en/services/whois-query"
-               org=$(grep -m1 'descr' tmprange | cut -d':' -f2)
-               netname=$(grep 'netname' tmprange | cut -d':' -f2)
-               country=$(grep -m1 'country' tmprange | cut -d':' -f2 | tr '[:lower:]' '[:upper:]')
-               admin=$(grep -m1 'admin-c' tmprange | cut -d':' -f2)
-               cidrwc=$($ipcalccmd $range | grep -v 'deaggregate' | wc -l)
-               if [ $cidrwc -gt 1 ]; then
-                    cidr='**Non-standard range**'
-               else
-                    cidr=$($ipcalccmd $range | grep -v 'deaggregate')
-               fi
-               echo "$netname,$org,$inetnum,$inetnumurl,$country,$rir,$cidr" >> $orgoutfile
-          done < tmpinetnum
-     fi
-elif grep -q -E 'Network is unreachable|No route to host' tmporgname; then
-     echo -e "\t${RED}[-] ${WHT}whois.afrinic.net is unreachable. Check network connection & try again.${NC}"
-else
-     echo -e "\t${RED}[-] ${WHT}No AfriNIC Records found for ${RED}$orginput${NC}"
-fi
+done < tmporglist
 
 rm tmporgname tmpinetnum tmpemails tmplookup tmpnetname tmprange 2>/dev/null
 }
@@ -603,46 +625,51 @@ rm tmporgname tmpinetnum tmpemails tmplookup tmpnetname tmprange 2>/dev/null
 
 ###################################################################################################################
 
+# ARIN query
+
 pocoutfile='poccidrs'
 orgoutfile='orgcidrs'
 pocfile='poccidrs.csv'
 orgfile='orgcidrs.csv'
-orghtml=$(echo $orginput | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
 agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36"
 
-echo
-echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$orginput ${WHT}Org Handles via ${GRN}ARIN${NC}"
+while read name; do
+     orghtml=$(echo $name | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
 
-echo 'AAAAA--placeholder--' > $orgoutfile
+     echo
+     echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}Org Handles via ${GRN}ARIN${NC}"
 
-# ARIN - get list of org networks
+     echo 'AAAAA--placeholder--' > $orgoutfile
 
-# get org handles
-curl --silent http://whois.arin.net/rest/orgs\;name=${orghtml}* | sed "s|<|\\$lf|g" | grep '/rest/org/' > orginfo
+     # ARIN - get list of org networks
 
-if [ -s orginfo ]; then
-     echo -e "\t${GRN}[-] ${WHT}Found Org Handles for ${GRN}$orginput${NC}"
-     while read line; do
-          rir='ARIN'
-          country='US'
-          org=$(echo $line | cut -d'"' -f4 | sed 's|,||g')
-          orghandle=$(echo $line | cut -d'"' -f2)
-          # get list of org networks
-          curl --silent https://whois.arin.net/rest/org/${orghandle}/nets | sed "s|<|\\$lf|g" | grep '/rest/net/' | rev | cut -d'>' -f1 | rev | sed 's|$|.txt|g' > orgs
-          # get cidrs for each network
-          while read neturl; do
-               curl --silent $neturl | sed -e "s|  *|$tab|g" > nettmp
-               netname=$(grep 'NetName' nettmp | cut -d$'\t' -f2)
-               grep 'CIDR' nettmp | cut -d$'\t' -f2 | sed "s|, |\\$lf|g" > cidrtmp
-               while read cidr; do
-                    echo "$org,$orghandle,$netname,$neturl,$country,$rir,$cidr" >> $orgoutfile
-               done < cidrtmp
-               sleep 1
-          done < orgs
-     done < orginfo
-else
-     echo -e "\t${RED}[-]${WHT}No Org Handles found for ${GRN}$orginput${NC}"
-fi
+     # get org handles
+     curl --silent http://whois.arin.net/rest/orgs\;name=${orghtml}* | sed "s|<|\\$lf|g" | grep '/rest/org/' > orginfo
+
+     if [ -s orginfo ]; then
+          echo -e "\t${GRN}[-] ${WHT}Found Org Handles for ${GRN}$name${NC}"
+          while read line; do
+               rir='ARIN'
+               country='US'
+               org=$(echo $line | cut -d'"' -f4 | sed 's|,||g')
+               orghandle=$(echo $line | cut -d'"' -f2)
+               # get list of org networks
+               curl --silent https://whois.arin.net/rest/org/${orghandle}/nets | sed "s|<|\\$lf|g" | grep '/rest/net/' | rev | cut -d'>' -f1 | rev | sed 's|$|.txt|g' > orgs
+               # get cidrs for each network
+               while read neturl; do
+                    curl --silent $neturl | sed -e "s|  *|$tab|g" > nettmp
+                    netname=$(grep 'NetName' nettmp | cut -d$'\t' -f2)
+                    grep 'CIDR' nettmp | cut -d$'\t' -f2 | sed "s|, |\\$lf|g" > cidrtmp
+                    while read cidr; do
+                         echo "$org,$orghandle,$netname,$neturl,$country,$rir,$cidr" >> $orgoutfile
+                    done < cidrtmp
+                    sleep 1
+               done < orgs
+          done < orginfo
+     else
+          echo -e "\t${RED}[-]${WHT}No Org Handles found for ${GRN}$name${NC}"
+     fi
+done < tmporglist
 
 rm orginfo orgs nettmp cidrtmp 2>/dev/null
 
@@ -650,33 +677,38 @@ rm orginfo orgs nettmp cidrtmp 2>/dev/null
 ###################################################################################################################
 
 # ARIN - get list of customer handles
-echo
-echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$orginput ${WHT}Customer Handles via ${GRN}ARIN${NC}"
 
-curl --silent https://whois.arin.net/rest/customers\;name=${orghtml}* | sed "s|<|\\$lf|g" | grep '/rest/customer/' > custinfo
+while read name; do
+     orghtml=$(echo $name | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
 
-if [ -s custinfo ]; then
-     echo -e "\t${GRN}[-] ${WHT}Found Customer Handles for ${GRN}$orginput${NC}"
-     while read line; do
-          rir='ARIN'
-          country='US'
-          cust=$(echo $line | cut -d'"' -f4 | sed 's|,||g')
-          custhandle=$(echo $line | cut -d'"' -f2)
-          curl --silent https://whois.arin.net/rest/customer/${custhandle}/nets | sed "s|<|\\$lf|g" | grep '/rest/net/' | cut -d'>' -f2 | sed 's|$|.txt|' > custurls
-          while read custurl; do
-               curl --silent $custurl | sed -e "s|  *|$tab|g" > custtmp
-               netname=$(grep 'NetName' custtmp | cut -d$'\t' -f2)
-               neturl=$(grep 'Ref' custtmp | cut -d$'\t' -f2)
-               grep 'CIDR' custtmp | cut -d$'\t' -f2 | sed "s|, |\\$lf|g" > cidrtmp
-               while read cidr; do
-                    echo "$cust,$custhandle,$netname,$neturl,$country,$rir,$cidr" >> $orgoutfile
-               done < cidrtmp
-               sleep 1
-          done < custurls
-     done < custinfo
-else
-     echo -e "\t${RED}[-] ${WHT}No Customer Handles found for ${GRN}$orginput${NC}"
-fi
+     echo
+     echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}Customer Handles via ${GRN}ARIN${NC}"
+
+     curl --silent https://whois.arin.net/rest/customers\;name=${orghtml}* | sed "s|<|\\$lf|g" | grep '/rest/customer/' > custinfo
+
+     if [ -s custinfo ]; then
+          echo -e "\t${GRN}[-] ${WHT}Found Customer Handles for ${GRN}$name${NC}"
+          while read line; do
+               rir='ARIN'
+               country='US'
+               cust=$(echo $line | cut -d'"' -f4 | sed 's|,||g')
+               custhandle=$(echo $line | cut -d'"' -f2)
+               curl --silent https://whois.arin.net/rest/customer/${custhandle}/nets | sed "s|<|\\$lf|g" | grep '/rest/net/' | cut -d'>' -f2 | sed 's|$|.txt|' > custurls
+               while read custurl; do
+                    curl --silent $custurl | sed -e "s|  *|$tab|g" > custtmp
+                    netname=$(grep 'NetName' custtmp | cut -d$'\t' -f2)
+                    neturl=$(grep 'Ref' custtmp | cut -d$'\t' -f2)
+                    grep 'CIDR' custtmp | cut -d$'\t' -f2 | sed "s|, |\\$lf|g" > cidrtmp
+                    while read cidr; do
+                         echo "$cust,$custhandle,$netname,$neturl,$country,$rir,$cidr" >> $orgoutfile
+                    done < cidrtmp
+                    sleep 1
+               done < custurls
+          done < custinfo
+     else
+          echo -e "\t${RED}[-] ${WHT}No Customer Handles found for ${GRN}$name${NC}"
+     fi
+done < tmporglist
 
 rm custinfo custurls custtmp cidrtmp 2>/dev/null
 
@@ -690,8 +722,10 @@ echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for PoCs with the ${GRN}$emaildomain 
 if [[ $ccused == "Y" ]]; then
      if [[ $ccpos == "B" ]]; then
           cat $ccfilename | sed "s|$|\.${emaildomain}|" | tr '[:upper:]' '[:lower:]' | sort > emailtmp
+          sed -i 's|11\.||' emailtmp
      elif [[ $ccpos == "A" ]]; then
           cat $ccfilename | sed "s|^|${emaildomain}\.|" | tr '[:upper:]' '[:lower:]' | sort > emailtmp
+          sed -i 's|\.11||' emailtmp
      fi
 else
      echo "$emaildomain" > emailtmp
@@ -762,37 +796,40 @@ rm pocurltmp poctmp pocinfo urltmp urltmp2 urltmp3 urltmp4 cidrtmp emailtmp 2>/d
 
 # ARIN - query BGP route server
 
-ARRAYRS=( $hers $gblxrs $tiscalirs $eastlinkrs )
-rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
-randomrs=$(echo $rando)
-ncrs="nc -nv $randomrs 23"
+while read name; do
+     ARRAYRS=( $hers $gblxrs $tiscalirs $eastlinkrs )
+     rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
+     randomrs=$(echo $rando)
+     ncrs="nc -nv $randomrs 23"
+     orghtml=$(echo $name | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
 
-echo
-echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$orginput ${WHT}BGP Prefixes via ${GRN}$randomrs ${WHT}Route Server Query${NC}"
+     echo
+     echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}BGP Prefixes via ${GRN}$randomrs ${WHT}Route Server Query${NC}"
 
-curl --silent http://whois.arin.net/rest/orgs\;name=${orghtml}* | sed "s|<|\\$lf|g" | grep '/rest/org/' > orginfo
-if [ -s orginfo ]; then
-     echo -e "\t${GRN}[-] ${WHT}Found ASN Records for ${GRN}$orginput${NC}"
-     while read orgname; do
-          rir='ARIN'
-          country='US'
-          org=$(echo $orgname | cut -d'"' -f4 | sed 's|,||g')
-          handle=$(echo $orgname | cut -d'"' -f2)
-          curl --silent http://whois.arin.net/rest/org/${handle}/asns | sed "s|<|\\$lf|g" | grep '/rest/asn/' | rev | cut -d'/' -f1 | rev >> asns
-          while read asn; do
-               num=$(echo $asn | sed 's|AS||g')
-               (sleep 2; echo "show ip bgp regexp $num"; sleep 4; echo " "; sleep 4; echo "exit") | $ncrs > tmpprefix 2>/dev/null
-               grep '/' tmpprefix | grep '*' | sed 's|>| |g' | sed 's|  | |g' | sed 's|i||g' | cut -d' ' -f2 > bgplookup
-               while read cidr; do
-                    neturl=$(echo "http://bgp.he.net/${asn}#_asinfo")
-                    echo "$org,$handle,$asn,$neturl,$country,$rir,$cidr" >> $orgoutfile
-               done < bgplookup
-               sleep 2
-          done < asns
-     done < orginfo
-else
-     echo -e "\t${RED}[-] ${WHT}No ASN Records found for ${GRN}$email${NC}"
-fi
+     curl --silent http://whois.arin.net/rest/orgs\;name=${orghtml}* | sed "s|<|\\$lf|g" | grep '/rest/org/' > orginfo
+     if [ -s orginfo ]; then
+          echo -e "\t${GRN}[-] ${WHT}Found ASN Records for ${GRN}$name${NC}"
+          while read orgname; do
+               rir='ARIN'
+               country='US'
+               org=$(echo $orgname | cut -d'"' -f4 | sed 's|,||g')
+               handle=$(echo $orgname | cut -d'"' -f2)
+               curl --silent http://whois.arin.net/rest/org/${handle}/asns | sed "s|<|\\$lf|g" | grep '/rest/asn/' | rev | cut -d'/' -f1 | rev >> asns
+               while read asn; do
+                    num=$(echo $asn | sed 's|AS||g')
+                    (sleep 2; echo "show ip bgp regexp $num"; sleep 4; echo " "; sleep 4; echo "exit") | $ncrs > tmpprefix 2>/dev/null
+                    grep '/' tmpprefix | grep '*' | sed 's|>| |g' | sed 's|  | |g' | sed 's|i||g' | cut -d' ' -f2 > bgplookup
+                    while read cidr; do
+                         neturl=$(echo "http://bgp.he.net/${asn}#_asinfo")
+                         echo "$org,$handle,$asn,$neturl,$country,$rir,$cidr" >> $orgoutfile
+                    done < bgplookup
+                    sleep 2
+               done < asns
+          done < orginfo
+     else
+          echo -e "\t${RED}[-] ${WHT}No ASN Records found for ${GRN}$name${NC}"
+     fi
+done < tmporglist
 
 rm orginfo asns tmpprefix bgplookup 2>/dev/null
 
@@ -833,7 +870,7 @@ cut -d',' -f7 $orgfile | grep -v 'CIDR' > cidrlist
 cut -d',' -f8 $pocfile | grep -v 'CIDR' >> cidrlist
 sort -t . -k1,1n -k2,2n -k3,3n -k4,4n -n -u cidrlist > cidrlist.txt
 
-rm $orgoutfile $pocoutfile cidrlist $ccfilename 2>/dev/null
+rm $orgoutfile $pocoutfile cidrlist $ccfilename tmporglist 2>/dev/null
 
 echo
 echo -e "!! Finally finished !!"
