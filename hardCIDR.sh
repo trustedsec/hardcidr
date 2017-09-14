@@ -57,11 +57,10 @@ lf=$'\n'
 tab=$'\t'
 
 # BGP route server pool
-# Route servers selected based on router type & not requiring a password
-hers='64.62.142.154'          #Hurricane Electric: route-server.he.net
-gblxrs='67.17.81.28'          #Global Crossing: route-server.gblx.net
-tiscalirs='213.200.64.94'     #Tiscali: route-server.ip.tiscali.net
-eastlinkrs='24.137.100.8'     #Eastlink Canada: route-server.eastlink.ca
+rs1='64.62.142.154'           #Hurricane Electric: route-server.he.net
+rs2='154.11.63.86'            #Teleus Eastern Canada: route-views.on.bb.telus.com
+rs3='203.178.141.138'         #TELXATL: route-views.telxatl.routeviews.org
+rs4='207.162.219.54'          #NWAX: route-views.nwax.routeviews.org
 
 # Script help
 f_help()
@@ -486,7 +485,7 @@ while read name; do
 
      rir="LACNIC"
 
-     ARRAYRS=( $hers $gblxrs $tiscalirs $eastlinkrs )
+     ARRAYRS=( $rs1 $rs2 $rs3 $rs4 )
      rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
      randomrs=$(echo $rando)
      ncrs="nc -nv $randomrs 23"
@@ -525,7 +524,7 @@ while read name; do
                     org=$(grep 'owner:' tmplookup | cut -d':' -f2 | sed 's|,||g')
                     country=$(grep 'country:' tmplookup | cut -d':' -f2)
                     num=$(echo $asn | sed 's|AS||g')
-                    (sleep 2; echo "show ip bgp regexp $num"; sleep 8; echo " "; sleep 4; echo "exit") | $ncrs > tmpprefix 2>/dev/null
+                    (sleep 2; echo "show ip bgp regexp $num"; sleep 8; echo " "; sleep 8; echo "exit") | $ncrs > tmpprefix 2>/dev/null
                     grep -e 'i[0-9]' tmpprefix | sed 's|i||g' | cut -d' ' -f2 | grep -v '/' | sed 's|$|/24|g' > bgplookup
                     while read cidr; do
                          neturl=$(echo "http://bgp.he.net/${asn}#_asinfo")
@@ -797,15 +796,9 @@ rm pocurltmp poctmp pocinfo urltmp urltmp2 urltmp3 urltmp4 cidrtmp emailtmp 2>/d
 # ARIN - query BGP route server
 
 while read name; do
-     ARRAYRS=( $hers $gblxrs $tiscalirs $eastlinkrs )
-     rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
-     randomrs=$(echo $rando)
-     ncrs="nc -nv $randomrs 23"
      orghtml=$(echo $name | sed 's| |%20|g;s|-|%2D|g;s|,|%2C|g;s|\.|%2E|g;s|\&|%26|g')
-
      echo
      echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}BGP Prefixes via ${GRN}$randomrs ${WHT}Route Server Query${NC}"
-
      curl --silent http://whois.arin.net/rest/orgs\;name=${orghtml}* | sed "s|<|\\$lf|g" | grep '/rest/org/' > orginfo
      if [ -s orginfo ]; then
           echo -e "\t${GRN}[-] ${WHT}Found ASN Records for ${GRN}$name${NC}"
@@ -814,17 +807,23 @@ while read name; do
                country='US'
                org=$(echo $orgname | cut -d'"' -f4 | sed 's|,||g')
                handle=$(echo $orgname | cut -d'"' -f2)
-               curl --silent http://whois.arin.net/rest/org/${handle}/asns | sed "s|<|\\$lf|g" | grep '/rest/asn/' | rev | cut -d'/' -f1 | rev >> asns
-               while read asn; do
-                    num=$(echo $asn | sed 's|AS||g')
-                    (sleep 2; echo "show ip bgp regexp $num"; sleep 4; echo " "; sleep 4; echo "exit") | $ncrs > tmpprefix 2>/dev/null
-                    grep '/' tmpprefix | grep '*' | sed 's|>| |g' | sed 's|  | |g' | sed 's|i||g' | cut -d' ' -f2 > bgplookup
-                    while read cidr; do
-                         neturl=$(echo "http://bgp.he.net/${asn}#_asinfo")
-                         echo "$org,$handle,$asn,$neturl,$country,$rir,$cidr" >> $orgoutfile
-                    done < bgplookup
-                    sleep 2
-               done < asns
+               curl --silent http://whois.arin.net/rest/org/${handle}/asns | sed "s|<|\\$lf|g" | grep '/rest/asn/' | rev | cut -d'/' -f1 | rev > asns
+               if [ -s asns ]; then
+                    while read asn; do
+                         ARRAYRS=( $rs1 $rs2 $rs3 $rs4 )
+                         rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
+                         randomrs=$(echo $rando)
+                         ncrs="nc -nv $randomrs 23"                    
+                         num=$(echo $asn | sed 's|AS||g')
+                         (sleep 5; echo "show ip bgp regexp $num"; sleep 3; echo " "; sleep 3; echo " "; sleep 3; echo "exit") | $ncrs > tmpprefix 2>/dev/null
+                         sleep 2
+                         grep " $num " tmpprefix |  grep '/' | grep '*' | sed 's|>| |g' | sed 's|  | |g' | sed 's|i||g' | cut -d' ' -f2 > bgplookup
+                         while read cidr; do
+                              neturl=$(echo "http://bgp.he.net/${asn}#_asinfo")
+                              echo "$org,$handle,$asn,$neturl,$country,$rir,$cidr" >> $orgoutfile
+                         done < bgplookup
+                    done < asns
+               fi
           done < orginfo
      else
           echo -e "\t${RED}[-] ${WHT}No ASN Records found for ${GRN}$name${NC}"
@@ -859,16 +858,16 @@ fi
 
 # Output file sorting & clean-up
 
-sort -t',' -k7 -nu $orgoutfile | sed 's|AAAAA--placeholder--|Organization/Customer,Org Handle/Description,Network Name/ASN,Network/ASN URL,Country Code,RIR,CIDR|' > $orgfile
+sort -t',' -k7 -n $orgoutfile | sort -u | sed 's|AAAAA--placeholder--|Organization/Customer,Org Handle/Description,Network Name/ASN,Network/ASN URL,Country Code,RIR,CIDR|' > $orgfile
 if [[ $ccused == "Y" ]]; then
-     sort -t',' -k8 -nu $pocoutfile | sed 's|AAAAA--placeholder--|Organization,Network URL,PoC Handle,PoC Email,PoC Handle URL,Country Code,RIR,CIDR|' > $pocfile
+     sort -t',' -k8 -n $pocoutfile | sort -u | sed 's|AAAAA--placeholder--|Organization,Network URL,PoC Handle,PoC Email,PoC Handle URL,Country Code,RIR,CIDR|' > $pocfile
 else
-     sort -t',' -k8 -nu $pocoutfile | sed 's|AAAAA--placeholder--|Organization,Network URL,PoC Handle,PoC Email,PoC Handle URL,Country Code,RIR,CIDR|' > $pocfile
+     sort -t',' -k8 -n $pocoutfile | sort -u | sed 's|AAAAA--placeholder--|Organization,Network URL,PoC Handle,PoC Email,PoC Handle URL,Country Code,RIR,CIDR|' > $pocfile
 fi
 
 cut -d',' -f7 $orgfile | grep -v 'CIDR' > cidrlist
 cut -d',' -f8 $pocfile | grep -v 'CIDR' >> cidrlist
-sort -t . -k1,1n -k2,2n -k3,3n -k4,4n -n -u cidrlist > cidrlist.txt
+sort -t . -k1,1n -k2,2n -k3,3n -k4,4n -n -u cidrlist | sed '/^$/d' > cidrlist.txt
 
 rm $orgoutfile $pocoutfile cidrlist $ccfilename tmporglist 2>/dev/null
 
