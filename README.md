@@ -71,4 +71,4 @@ These will be found within the results as well.
 
 ## Additional Information
 For more information, check out the blog post on the TrustedSec website:
-[Classy Inter-Domain Routing Enumeration](https://www.trustedsec.com/2017/03/classy-inter-domain-routing-enumeration/)
+[Classy Inter-Domain Routing Enumeration](https://www.trustedsec.com/blog/classy-inter-domain-routing-enumeration/)
