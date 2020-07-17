@@ -217,7 +217,7 @@ rs5=$(dig +short route-server.eastlink.ca)             #Eastlink
 ARRAYRS=( $rs1 $rs2 $rs3 $rs4 $rs5 )
 rando=${ARRAYRS[$[RANDOM % ${#ARRAYRS[@]}]]}
 randomrs=$(echo $rando)
-ncrs="nc -nv $randomrs 23"                    
+ncrs="nc -nv $randomrs 23"
 }
 
 f_term()
@@ -330,11 +330,11 @@ else
 fi
 
 # Check for names containing '&' or 'and' to search for both instances
-if [[ $orginput == *'&'* ]]; then
+if [[ $orginput == *' & '* ]]; then
      echo -e "${WHT}Client name contains an ${RED}&${WHT}. We will search for name with ${RED}and ${WHT}also.${NC} "
      echo $orginput > tmporglist
      echo $orginput | sed 's|\&|and|' >> tmporglist
-elif [[ $orginput == *'and'* ]]; then
+elif [[ $orginput == *' and '* ]]; then
      echo -e "${WHT}Client name contains ${RED}and${WHT}. We will search for name with an ${RED}& ${WHT}also.${NC}"
      echo $orginput > tmporglist
      echo $orginput | sed 's|and|\&|' >> tmporglist
@@ -367,7 +367,7 @@ while read name; do
      echo
      echo -e "${GRN}[*] ${WHT}Enumerating CIDRs for ${GRN}$name ${WHT}Org Names via${NC} RIPE NCC"
 
-     whois -h whois.ripe.net "$name" > tmporgname 2>&1
+     whois -h whois.ripe.net -B "$name" > tmporgname 2>&1
      if ! grep -q -E 'No entries found|Network is unreachable|No route to host' tmporgname; then
           echo -e "\t${GRN}[-] ${WHT}Found RIPE NCC Records for ${GRN}$name${NC}"
           grep 'inetnum' tmporgname | sed -e "s|  \+|$tab|g" | cut -d$'\t' -f2 > tmpinetnum
