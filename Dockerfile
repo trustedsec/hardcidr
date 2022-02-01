@@ -6,4 +6,4 @@ RUN git clone https://github.com/trustedsec/hardcidr
 
 WORKDIR hardcidr
 
-ENTRYPOINT [ "bash" ]
+ENTRYPOINT [ "./hardCIDR.sh" ]
