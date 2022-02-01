@@ -69,6 +69,20 @@ URLs for further validation where necessary. It is also possible that employees 
 target organization used their corporate email address to register their own domains. 
 These will be found within the results as well.
 
+## Running with Docker
+
+```
+docker build -t hardcidr .
+```
+
+Building the hardcidr image
+
+```
+docker run -v $(pwd):/tmp -it hardcidr
+```
+
+Running the container. Output will be saved to current directory
+
 ## Additional Information
 For more information, check out the blog post on the TrustedSec website:
 [Classy Inter-Domain Routing Enumeration](https://www.trustedsec.com/blog/classy-inter-domain-routing-enumeration/)
