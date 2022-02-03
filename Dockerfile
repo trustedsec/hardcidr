@@ -1,9 +1,7 @@
-FROM kalilinux/kali-rolling
+FROM bash:latest
+RUN apk update
+RUN apk add curl bind-tools
+COPY . /app/
+WORKDIR /app
 
-RUN apt update && apt upgrade -y
-RUN apt install -y git ipcalc curl dnsutils ncat
-RUN git clone https://github.com/trustedsec/hardcidr
-
-WORKDIR hardcidr
-
-ENTRYPOINT [ "./hardCIDR.sh" ]
+ENTRYPOINT [ "/usr/local/bin/bash","/app/hardCIDR.sh" ]
